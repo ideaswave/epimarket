@@ -1,0 +1,242 @@
+syntax = "proto3";
+
+package inventory;
+
+option go_package = "ideaswave.fr/ecommerce/inventory";
+
+// Inventory Service for stock management
+service InventoryService {
+  // Check stock availability for products
+  rpc CheckStock(StockCheckRequest) returns (StockCheckResponse);
+  
+  // Bulk check stock for multiple products
+  rpc BulkCheckStock(BulkStockCheckRequest) returns (BulkStockCheckResponse);
+  
+  // Reserve stock for an order
+  rpc ReserveStock(ReserveStockRequest) returns (ReserveStockResponse);
+  
+  // Commit a reservation (after payment success)
+  rpc CommitReservation(CommitReservationRequest) returns (CommitReservationResponse);
+  
+  // Release reserved stock
+  rpc ReleaseStock(ReleaseStockRequest) returns (ReleaseStockResponse);
+  
+  // Update stock levels
+  rpc UpdateStock(UpdateStockRequest) returns (UpdateStockResponse);
+  
+  // Get stock history
+  rpc GetStockHistory(StockHistoryRequest) returns (StockHistoryResponse);
+  
+  // Subscribe to stock updates (streaming)
+  rpc WatchStock(WatchStockRequest) returns (stream StockUpdate);
+}
+
+message StockCheckRequest {
+  string product_id = 1;
+  string variant_id = 2;
+  string warehouse_id = 3;  // Optional: specific warehouse
+}
+
+message StockCheckResponse {
+  string product_id = 1;
+  string variant_id = 2;
+  int32 available = 3;
+  int32 reserved = 4;
+  int32 total = 5;
+  StockStatus status = 6;
+  repeated WarehouseStock warehouses = 7;
+}
+
+message BulkStockCheckRequest {
+  repeated StockCheckItem items = 1;
+}
+
+message StockCheckItem {
+  string product_id = 1;
+  string variant_id = 2;
+  int32 requested_quantity = 3;
+}
+
+message BulkStockCheckResponse {
+  repeated StockAvailability results = 1;
+  bool all_available = 2;
+}
+
+message StockAvailability {
+  string product_id = 1;
+  string variant_id = 2;
+  int32 requested = 3;
+  int32 available = 4;
+  bool is_available = 5;
+  StockStatus status = 6;
+}
+
+message ReserveStockRequest {
+  string order_id = 1;
+  string customer_id = 2;
+  repeated ReservationItem items = 3;
+  int64 expiry_seconds = 4;  // Reservation expiry time
+  string idempotency_key = 5;
+}
+
+message ReservationItem {
+  string product_id = 1;
+  string variant_id = 2;
+  int32 quantity = 3;
+  string warehouse_id = 4;  // Optional: preferred warehouse
+}
+
+message ReserveStockResponse {
+  string reservation_id = 1;
+  string order_id = 2;
+  ReservationStatus status = 3;
+  repeated ReservationResult items = 4;
+  int64 expires_at = 5;
+  string error_code = 6;
+  string error_message = 7;
+}
+
+message ReservationResult {
+  string product_id = 1;
+  string variant_id = 2;
+  int32 requested = 3;
+  int32 reserved = 4;
+  bool success = 5;
+  string warehouse_id = 6;
+  string failure_reason = 7;
+}
+
+message CommitReservationRequest {
+  string reservation_id = 1;
+  string order_id = 2;
+}
+
+message CommitReservationResponse {
+  string reservation_id = 1;
+  bool success = 2;
+  string error_code = 3;
+  string error_message = 4;
+}
+
+message ReleaseStockRequest {
+  string reservation_id = 1;
+  string order_id = 2;
+  string reason = 3;
+}
+
+message ReleaseStockResponse {
+  string reservation_id = 1;
+  bool success = 2;
+  repeated ReleasedItem items = 3;
+}
+
+message ReleasedItem {
+  string product_id = 1;
+  string variant_id = 2;
+  int32 quantity = 3;
+}
+
+message UpdateStockRequest {
+  string product_id = 1;
+  string variant_id = 2;
+  string warehouse_id = 3;
+  StockUpdateType update_type = 4;
+  int32 quantity = 5;
+  string reason = 6;
+  string reference_id = 7;  // e.g., purchase order ID, return ID
+}
+
+message UpdateStockResponse {
+  string product_id = 1;
+  string variant_id = 2;
+  int32 previous_quantity = 3;
+  int32 new_quantity = 4;
+  bool success = 5;
+  string error_message = 6;
+}
+
+message StockHistoryRequest {
+  string product_id = 1;
+  string variant_id = 2;
+  string warehouse_id = 3;
+  int64 from_timestamp = 4;
+  int64 to_timestamp = 5;
+  int32 limit = 6;
+}
+
+message StockHistoryResponse {
+  repeated StockEvent events = 1;
+  int32 total = 2;
+}
+
+message StockEvent {
+  string event_id = 1;
+  string product_id = 2;
+  string variant_id = 3;
+  string warehouse_id = 4;
+  StockUpdateType type = 5;
+  int32 quantity_change = 6;
+  int32 quantity_before = 7;
+  int32 quantity_after = 8;
+  string reference_id = 9;
+  string reason = 10;
+  int64 timestamp = 11;
+}
+
+message WatchStockRequest {
+  repeated string product_ids = 1;
+  bool include_all = 2;
+  int32 threshold = 3;  // Alert when stock falls below this
+}
+
+message StockUpdate {
+  string product_id = 1;
+  string variant_id = 2;
+  string warehouse_id = 3;
+  int32 available = 4;
+  int32 reserved = 5;
+  StockStatus status = 6;
+  StockUpdateType update_type = 7;
+  int64 timestamp = 8;
+}
+
+message WarehouseStock {
+  string warehouse_id = 1;
+  string warehouse_name = 2;
+  int32 available = 3;
+  int32 reserved = 4;
+  string location = 5;
+}
+
+enum StockStatus {
+  STOCK_UNKNOWN = 0;
+  IN_STOCK = 1;
+  LOW_STOCK = 2;
+  OUT_OF_STOCK = 3;
+  DISCONTINUED = 4;
+  PREORDER = 5;
+  BACKORDER = 6;
+}
+
+enum ReservationStatus {
+  RESERVATION_UNKNOWN = 0;
+  RESERVATION_PENDING = 1;
+  RESERVATION_CONFIRMED = 2;
+  RESERVATION_PARTIAL = 3;
+  RESERVATION_FAILED = 4;
+  RESERVATION_EXPIRED = 5;
+  RESERVATION_COMMITTED = 6;
+  RESERVATION_RELEASED = 7;
+}
+
+enum StockUpdateType {
+  UPDATE_UNKNOWN = 0;
+  RECEIVED = 1;          // Stock received from supplier
+  SOLD = 2;              // Stock sold
+  RESERVED = 3;          // Stock reserved for order
+  RELEASED = 4;          // Reserved stock released
+  RETURNED = 5;          // Stock returned
+  ADJUSTED = 6;          // Manual adjustment
+  DAMAGED = 7;           // Damaged/written off
+  TRANSFERRED = 8;       // Transferred between warehouses
+}

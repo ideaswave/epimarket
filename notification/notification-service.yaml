@@ -1,0 +1,195 @@
+name: notificationService
+description: Multi-channel notification service - email, SMS, push notifications
+goals:
+  - name: DeliveryReliability
+    metrics:
+      - signal: notification_delivery_rate
+        type: reliability
+        goal: high_delivery
+        threshold: 0.99  # 99% delivery rate
+        delay: 0
+        window: 3600
+      - signal: notification_latency
+        type: performance
+        goal: low_latency
+        threshold: 5.0  # Max 5 seconds
+        delay: 0
+        window: 60
+      - signal: unsubscribe_rate
+        type: engagement
+        goal: low_unsubscribe
+        threshold: 0.02  # Max 2% unsubscribe
+        delay: 0
+        window: 604800
+    resourceContract:
+      priority: normal
+      computeUnits: 25
+      maxWaitTime: "15s"
+      fallbackBehavior: queue
+
+intents:
+  - name: SendOrderConfirmation
+    whenSensor: orderConfirmSensor
+    toFunc: SendOrderConfirmationFunc
+    primitiveIntent: notification
+    description: "Send order confirmation email"
+
+  - name: SendShippingUpdate
+    whenSensor: shippingSensor
+    toFunc: SendShippingUpdateFunc
+    primitiveIntent: notification
+    description: "Send shipping status update"
+
+  - name: SendDeliveryNotification
+    whenSensor: deliverySensor
+    toFunc: SendDeliveryNotificationFunc
+    primitiveIntent: notification
+    description: "Send delivery confirmation"
+
+  - name: SendPaymentReceipt
+    whenSensor: paymentSensor
+    toFunc: SendPaymentReceiptFunc
+    primitiveIntent: notification
+    description: "Send payment receipt"
+
+  - name: SendAbandonedCartReminder
+    whenSensor: abandonedCartSensor
+    toFunc: SendCartReminderFunc
+    primitiveIntent: notification
+    description: "Send abandoned cart reminder"
+
+  - name: SendPromotionalEmail
+    whenSensor: promoSensor
+    toFunc: SendPromoEmailFunc
+    primitiveIntent: notification
+    description: "Send promotional email campaigns"
+
+  - name: SendLowStockAlert
+    whenSensor: stockAlertSensor
+    toFunc: SendStockAlertFunc
+    primitiveIntent: notification
+    description: "Send low stock alerts to admins"
+
+  - name: SendRefundConfirmation
+    whenSensor: refundSensor
+    toFunc: SendRefundConfirmationFunc
+    primitiveIntent: notification
+    description: "Send refund confirmation"
+
+  - name: HandleBounce
+    whenSensor: bounceSensor
+    toFunc: HandleBounceFunc
+    primitiveIntent: errorHandling
+    description: "Handle email bounces and update preferences"
+
+  - name: ProcessUnsubscribe
+    whenSensor: unsubscribeSensor
+    toFunc: ProcessUnsubscribeFunc
+    primitiveIntent: stateMutation
+    description: "Process unsubscribe requests"
+
+api:
+  basePath: "/api/v1/notifications"
+  endpoints:
+    - name: "sendNotification"
+      method: "POST"
+      path: "/"
+      to: "func: SendNotificationFunc"
+      description: "Send a notification"
+
+    - name: "getPreferences"
+      method: "GET"
+      path: "/preferences/{userId}"
+      to: "func: GetPreferencesFunc"
+      description: "Get user notification preferences"
+
+    - name: "updatePreferences"
+      method: "PUT"
+      path: "/preferences/{userId}"
+      to: "func: UpdatePreferencesFunc"
+      description: "Update notification preferences"
+
+    - name: "getHistory"
+      method: "GET"
+      path: "/history/{userId}"
+      to: "func: GetNotificationHistoryFunc"
+      description: "Get notification history"
+
+channels:
+  - name: email
+    provider: sendgrid
+    config:
+      apiKeyEnv: SENDGRID_API_KEY
+      fromEmail: noreply@example.com
+      fromName: "E-Commerce Store"
+
+  - name: sms
+    provider: twilio
+    config:
+      accountSidEnv: TWILIO_ACCOUNT_SID
+      authTokenEnv: TWILIO_AUTH_TOKEN
+      fromNumber: "+1234567890"
+
+  - name: push
+    provider: firebase
+    config:
+      credentialsEnv: FIREBASE_CREDENTIALS
+
+templates:
+  - name: order_confirmation
+    subject: "Order Confirmed - #{order_id}"
+    channels: [email, push]
+    
+  - name: shipping_update
+    subject: "Your order is on the way!"
+    channels: [email, sms, push]
+    
+  - name: delivery_confirmation
+    subject: "Your order has been delivered"
+    channels: [email, push]
+    
+  - name: abandoned_cart
+    subject: "You left something behind..."
+    channels: [email]
+    delay: 3600  # 1 hour after abandonment
+
+petriNet:
+  name: NotificationWorkflow
+  places:
+    - id: queued
+      initial: true
+    - id: rendering
+    - id: sending
+    - id: sent
+    - id: delivered
+    - id: failed
+    - id: bounced
+  transitions:
+    - id: renderTemplate
+      from: [queued]
+      to: [rendering]
+      action: "renderNotification"
+    - id: send
+      from: [rendering]
+      to: [sending]
+      action: "dispatchToProvider"
+    - id: confirmSent
+      from: [sending]
+      to: [sent]
+      guard: "provider.accepted"
+    - id: confirmDelivered
+      from: [sent]
+      to: [delivered]
+      guard: "delivery.confirmed"
+    - id: handleFailure
+      from: [sending]
+      to: [failed]
+      guard: "provider.rejected"
+    - id: handleBounce
+      from: [sent]
+      to: [bounced]
+      guard: "bounce.received"
+    - id: retry
+      from: [failed]
+      to: [queued]
+      guard: "retries < maxRetries"

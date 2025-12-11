@@ -1,0 +1,162 @@
+name: paymentService
+description: Payment processing - transactions, refunds, and payment gateway integration
+goals:
+  - name: transactionSuccess
+    metrics:
+      - signal: payment_success_rate
+        type: reliability
+        goal: high_success
+        threshold: 0.999  # 99.9% success rate
+        delay: 0
+        window: 3600
+    resourceContract:
+      priority: critical
+      computeUnits: 200
+      maxWaitTime: "2s"
+      futuresEnabled: true
+      fallbackBehavior: fail
+      costCeiling: 10
+
+  - name: responseTime
+    metrics:
+      - signal: payment_latency
+        type: performance
+        goal: low_latency
+        threshold: 0.5  # Max 500ms
+        delay: 0
+        window: 60
+    resourceContract:
+      priority: critical
+      computeUnits: 100
+      maxWaitTime: "1s"
+
+intents:
+  - name: ValidatePaymentMethod
+    whenSensor: validationSensor
+    toFunc: ValidatePaymentMethodFunc
+    primitiveIntent: validation
+    description: "Validate payment method and card details"
+
+  - name: FraudCheck
+    whenSensor: fraudSensor
+    toFunc: FraudCheckFunc
+    primitiveIntent: validation
+    description: "Run fraud detection algorithms"
+
+  - name: AuthorizePayment
+    whenSensor: authorizeSensor
+    toFunc: AuthorizePaymentFunc
+    primitiveIntent: externalCall
+    description: "Authorize payment with payment gateway"
+
+  - name: CapturePayment
+    whenSensor: captureSensor
+    toFunc: CapturePaymentFunc
+    primitiveIntent: externalCall
+    description: "Capture authorized payment"
+
+  - name: ProcessRefund
+    whenSensor: refundSensor
+    toFunc: ProcessRefundFunc
+    primitiveIntent: externalCall
+    description: "Process full or partial refund"
+
+  - name: HandlePaymentWebhook
+    whenSensor: webhookSensor
+    toFunc: HandleWebhookFunc
+    primitiveIntent: eventProcessing
+    description: "Handle payment gateway webhooks"
+
+  - name: ReconcileTransactions
+    whenSensor: reconcileSensor
+    toFunc: ReconcileFunc
+    primitiveIntent: dataSync
+    description: "Reconcile transactions with payment gateway"
+
+  - name: RetryFailedPayment
+    whenSensor: retrySensor
+    toFunc: RetryPaymentFunc
+    primitiveIntent: retry
+    description: "Retry failed payment with exponential backoff"
+
+api:
+  basePath: "/api/v1/payments"
+  endpoints:
+    - name: "processPayment"
+      method: "POST"
+      path: "/"
+      to: "func: ProcessPaymentFunc"
+      description: "Process a payment"
+
+    - name: "getPayment"
+      method: "GET"
+      path: "/{paymentId}"
+      to: "func: GetPaymentFunc"
+      description: "Get payment details"
+
+    - name: "refundPayment"
+      method: "POST"
+      path: "/{paymentId}/refund"
+      to: "func: ProcessRefundFunc"
+      description: "Refund a payment"
+
+    - name: "getPaymentMethods"
+      method: "GET"
+      path: "/methods/{userId}"
+      to: "func: GetPaymentMethodsFunc"
+      description: "Get user's saved payment methods"
+
+petriNet:
+  name: PaymentWorkflow
+  places:
+    - id: initiated
+      initial: true
+    - id: validated
+    - id: fraudChecked
+    - id: authorized
+    - id: captured
+    - id: completed
+    - id: failed
+    - id: refundPending
+    - id: refunded
+  transitions:
+    - id: validate
+      from: [initiated]
+      to: [validated]
+      action: "validatePaymentDetails"
+      guard: "payment.isValid"
+    - id: checkFraud
+      from: [validated]
+      to: [fraudChecked]
+      action: "runFraudDetection"
+      guard: "fraud.score < threshold"
+    - id: authorize
+      from: [fraudChecked]
+      to: [authorized]
+      action: "authorizeWithGateway"
+    - id: capture
+      from: [authorized]
+      to: [captured]
+      action: "capturePayment"
+    - id: complete
+      from: [captured]
+      to: [completed]
+      action: "markComplete"
+    - id: failValidation
+      from: [initiated, validated]
+      to: [failed]
+    - id: failFraud
+      from: [fraudChecked]
+      to: [failed]
+      guard: "fraud.detected"
+    - id: failAuthorization
+      from: [authorized]
+      to: [failed]
+    - id: initiateRefund
+      from: [completed]
+      to: [refundPending]
+      action: "startRefund"
+    - id: completeRefund
+      from: [refundPending]
+      to: [refunded]
+      action: "processRefund"

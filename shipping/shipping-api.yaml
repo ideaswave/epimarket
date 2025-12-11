@@ -1,0 +1,337 @@
+openapi: 3.0.3
+info:
+  title: E-Commerce Shipping API
+  description: Shipping and delivery management API
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8083/api/v1/shipping
+
+paths:
+  /rates:
+    post:
+      operationId: calculateRates
+      summary: Calculate shipping rates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateCalculationRequest'
+      responses:
+        '200':
+          description: Available shipping rates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateCalculationResponse'
+
+  /options:
+    get:
+      operationId: getShippingOptions
+      summary: Get available shipping options
+      parameters:
+        - name: country
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: postalCode
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Shipping options
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ShippingOption'
+
+  /shipments:
+    post:
+      operationId: createShipment
+      summary: Create a shipment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateShipmentRequest'
+      responses:
+        '201':
+          description: Shipment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Shipment'
+
+  /shipments/{trackingNumber}:
+    get:
+      operationId: trackShipment
+      summary: Track a shipment
+      parameters:
+        - name: trackingNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tracking information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackingInfo'
+        '404':
+          description: Shipment not found
+
+  /returns:
+    post:
+      operationId: createReturn
+      summary: Create return shipment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReturnRequest'
+      responses:
+        '201':
+          description: Return shipment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReturnShipment'
+
+components:
+  schemas:
+    RateCalculationRequest:
+      type: object
+      required:
+        - destination
+        - items
+      properties:
+        origin:
+          $ref: '#/components/schemas/Address'
+        destination:
+          $ref: '#/components/schemas/Address'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShipmentItem'
+
+    RateCalculationResponse:
+      type: object
+      properties:
+        rates:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShippingRate'
+
+    ShippingRate:
+      type: object
+      properties:
+        carrier:
+          type: string
+        service:
+          type: string
+        price:
+          type: number
+        currency:
+          type: string
+        estimatedDays:
+          type: integer
+        deliveryDate:
+          type: string
+          format: date
+
+    ShippingOption:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        carrier:
+          type: string
+        description:
+          type: string
+        estimatedDays:
+          type: string
+        available:
+          type: boolean
+
+    CreateShipmentRequest:
+      type: object
+      required:
+        - orderId
+        - carrier
+        - service
+      properties:
+        orderId:
+          type: string
+        carrier:
+          type: string
+        service:
+          type: string
+        origin:
+          $ref: '#/components/schemas/Address'
+        destination:
+          $ref: '#/components/schemas/Address'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShipmentItem'
+        signature_required:
+          type: boolean
+        insurance:
+          type: boolean
+        insuranceValue:
+          type: number
+
+    Shipment:
+      type: object
+      properties:
+        id:
+          type: string
+        orderId:
+          type: string
+        trackingNumber:
+          type: string
+        carrier:
+          type: string
+        service:
+          type: string
+        status:
+          type: string
+          enum: [pending, label_created, picked_up, in_transit, out_for_delivery, delivered, failed, returned]
+        labelUrl:
+          type: string
+        estimatedDelivery:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    ShipmentItem:
+      type: object
+      properties:
+        name:
+          type: string
+        quantity:
+          type: integer
+        weight:
+          type: number
+        weightUnit:
+          type: string
+          enum: [lb, kg, oz, g]
+        dimensions:
+          $ref: '#/components/schemas/Dimensions'
+
+    Dimensions:
+      type: object
+      properties:
+        length:
+          type: number
+        width:
+          type: number
+        height:
+          type: number
+        unit:
+          type: string
+          enum: [in, cm]
+
+    TrackingInfo:
+      type: object
+      properties:
+        trackingNumber:
+          type: string
+        carrier:
+          type: string
+        status:
+          type: string
+        estimatedDelivery:
+          type: string
+          format: date-time
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackingEvent'
+
+    TrackingEvent:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        status:
+          type: string
+        description:
+          type: string
+        location:
+          type: string
+
+    Address:
+      type: object
+      properties:
+        name:
+          type: string
+        company:
+          type: string
+        address1:
+          type: string
+        address2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        postalCode:
+          type: string
+        country:
+          type: string
+        phone:
+          type: string
+
+    CreateReturnRequest:
+      type: object
+      required:
+        - orderId
+        - reason
+      properties:
+        orderId:
+          type: string
+        reason:
+          type: string
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              orderItemId:
+                type: string
+              quantity:
+                type: integer
+              reason:
+                type: string
+
+    ReturnShipment:
+      type: object
+      properties:
+        id:
+          type: string
+        orderId:
+          type: string
+        trackingNumber:
+          type: string
+        labelUrl:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time

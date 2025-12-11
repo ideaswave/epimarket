@@ -1,0 +1,106 @@
+name: catalogService
+description: Product catalog management - browse, search, and manage products
+goals:
+  - name: CatalogAvailability
+    metrics:
+      - signal: catalog_response_time
+        type: performance
+        goal: low_latency
+        threshold: 0.100  # 100ms max response time
+        delay: 0
+        window: 60
+      - signal: catalog_cache_hit_rate
+        type: efficiency
+        goal: high_cache_hits
+        threshold: 0.90
+        delay: 0
+        window: 300
+    resourceContract:
+      priority: high
+      computeUnits: 50
+      maxWaitTime: "5s"
+      fallbackBehavior: degrade
+
+intents:
+  - name: ListProducts
+    whenSensor: catalogListSensor
+    toFunc: ListProductsFunc
+    primitiveIntent: dataRetrieval
+    description: "Retrieve paginated product list with filters"
+
+  - name: GetProductDetails
+    whenSensor: productDetailSensor
+    toFunc: GetProductDetailsFunc
+    primitiveIntent: dataRetrieval
+    description: "Get detailed product information including variants"
+
+  - name: SearchProducts
+    whenSensor: searchSensor
+    toFunc: SearchProductsFunc
+    primitiveIntent: dataRetrieval
+    description: "Full-text search across product catalog"
+
+  - name: UpdateProductCache
+    whenSensor: cacheInvalidationSensor
+    toFunc: UpdateCacheFunc
+    primitiveIntent: cacheRefresh
+    description: "Refresh product cache on inventory changes"
+
+  - name: SyncCatalogFromSource
+    whenSensor: catalogSyncSensor
+    toFunc: SyncCatalogFunc
+    primitiveIntent: dataSync
+    description: "Sync catalog from external product management system"
+
+api:
+  basePath: "/api/v1/catalog"
+  endpoints:
+    - name: "listProducts"
+      method: "GET"
+      path: "/products"
+      to: "wasm:ecommerce:handleCatalogAPI"
+      description: "List products with filtering and pagination"
+      public: true
+
+    - name: "getProduct"
+      method: "GET"
+      path: "/products/{id}"
+      to: "wasm:ecommerce:handleCatalogAPI"
+      description: "Get product by ID"
+      public: true
+
+    - name: "searchProducts"
+      method: "GET"
+      path: "/search"
+      to: "wasm:ecommerce:handleCatalogAPI"
+      description: "Search products"
+      public: true
+
+    - name: "getCategories"
+      method: "GET"
+      path: "/categories"
+      to: "wasm:ecommerce:handleCatalogAPI"
+      description: "List all product categories"
+      public: true
+
+petriNet:
+  name: CatalogWorkflow
+  places:
+    - id: idle
+      initial: true
+    - id: fetching
+    - id: caching
+    - id: responding
+  transitions:
+    - id: startFetch
+      from: [idle]
+      to: [fetching]
+      guard: "request.valid"
+    - id: cacheResult
+      from: [fetching]
+      to: [caching]
+      action: "cacheProducts"
+    - id: returnResponse
+      from: [caching]
+      to: [responding, idle]
+      action: "sendResponse"

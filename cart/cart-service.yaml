@@ -1,0 +1,135 @@
+name: cartService
+description: Shopping cart management - add, update, remove items and checkout
+goals:
+  - name: CartConsistency
+    metrics:
+      - signal: cart_sync_accuracy
+        type: consistency
+        goal: data_integrity
+        threshold: 1.0  # 100% consistency required
+        delay: 0
+        window: 0
+      - signal: cart_abandonment_rate
+        type: business
+        goal: minimize_abandonment
+        threshold: 0.30  # Max 30% abandonment
+        delay: 0
+        window: 3600
+    resourceContract:
+      priority: normal
+      computeUnits: 30
+      maxWaitTime: "10s"
+      fallbackBehavior: retry
+
+intents:
+  - name: GetCart
+    whenSensor: cartRetrieveSensor
+    toFunc: GetCartFunc
+    primitiveIntent: dataRetrieval
+    description: "Retrieve user's current cart"
+
+  - name: AddToCart
+    whenSensor: addItemSensor
+    toFunc: AddToCartFunc
+    primitiveIntent: stateMutation
+    description: "Add product to cart with quantity"
+
+  - name: UpdateCartItem
+    whenSensor: updateItemSensor
+    toFunc: UpdateCartItemFunc
+    primitiveIntent: stateMutation
+    description: "Update item quantity in cart"
+
+  - name: RemoveFromCart
+    whenSensor: removeItemSensor
+    toFunc: RemoveFromCartFunc
+    primitiveIntent: stateMutation
+    description: "Remove item from cart"
+
+  - name: ValidateCart
+    whenSensor: validateCartSensor
+    toFunc: ValidateCartFunc
+    primitiveIntent: validation
+    description: "Validate cart items are in stock and prices are current"
+
+  - name: CalculateCartTotal
+    whenSensor: calculateSensor
+    toFunc: CalculateTotalFunc
+    primitiveIntent: computation
+    description: "Calculate cart total with taxes and discounts"
+
+  - name: MergeGuestCart
+    whenSensor: loginSensor
+    toFunc: MergeCartsFunc
+    primitiveIntent: dataMerge
+    description: "Merge guest cart with user cart on login"
+
+  - name: CartExpiryCleanup
+    whenSensor: expirySensor
+    toFunc: CleanupExpiredCartsFunc
+    primitiveIntent: maintenance
+    description: "Clean up abandoned carts after timeout"
+
+api:
+  basePath: "/api/v1/cart"
+  endpoints:
+    - name: "getCart"
+      method: "GET"
+      path: "/{userId}"
+      to: "wasm:ecommerce:handleCartAPI"
+      description: "Get user's cart"
+
+    - name: "addItem"
+      method: "POST"
+      path: "/{userId}/items"
+      to: "wasm:ecommerce:handleCartAPI"
+      description: "Add item to cart"
+
+    - name: "updateItem"
+      method: "PUT"
+      path: "/{userId}/items/{itemId}"
+      to: "wasm:ecommerce:handleCartAPI"
+      description: "Update cart item"
+
+    - name: "removeItem"
+      method: "DELETE"
+      path: "/{userId}/items/{itemId}"
+      to: "wasm:ecommerce:handleCartAPI"
+      description: "Remove item from cart"
+
+    - name: "clearCart"
+      method: "DELETE"
+      path: "/{userId}"
+      to: "wasm:ecommerce:handleCartAPI"
+      description: "Clear entire cart"
+
+petriNet:
+  name: CartWorkflow
+  places:
+    - id: empty
+      initial: true
+    - id: hasItems
+    - id: validating
+    - id: validated
+    - id: checkingOut
+  transitions:
+    - id: addFirstItem
+      from: [empty]
+      to: [hasItems]
+      action: "addItem"
+    - id: addMoreItems
+      from: [hasItems]
+      to: [hasItems]
+      action: "addItem"
+    - id: startValidation
+      from: [hasItems]
+      to: [validating]
+      guard: "checkout.requested"
+    - id: validationComplete
+      from: [validating]
+      to: [validated]
+      guard: "items.allValid"
+    - id: proceedToCheckout
+      from: [validated]
+      to: [checkingOut]
+      action: "initiateCheckout"

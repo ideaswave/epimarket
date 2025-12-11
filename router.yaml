@@ -1,0 +1,208 @@
+routes:
+  # ==================== CATALOG SERVICE ====================
+  - name: catalog-api
+    host: "localhost:8080"
+    type: "http"
+    spec: "ecommerce/catalog/catalog-api.yaml"
+    methods:
+      - name: ListProducts
+        endpoint: "/products"
+        method: "GET"
+        description: "List all products with optional filtering"
+        query_parameters:
+          - name: "category"
+            required: false
+            description: "Filter by category"
+          - name: "minPrice"
+            required: false
+            description: "Minimum price filter"
+          - name: "maxPrice"
+            required: false
+            description: "Maximum price filter"
+          - name: "page"
+            required: false
+            description: "Page number for pagination"
+          - name: "limit"
+            required: false
+            description: "Items per page"
+        logic:
+          retrieve_from_memory: true
+          filter_by:
+            key: "category"
+          response_format: "application/json"
+
+      - name: GetProduct
+        endpoint: "/products/{id}"
+        method: "GET"
+        description: "Get a single product by ID"
+        path_parameters:
+          - name: "id"
+            required: true
+            description: "Product ID"
+
+      - name: SearchProducts
+        endpoint: "/products/search"
+        method: "GET"
+        description: "Full-text search for products"
+        query_parameters:
+          - name: "q"
+            required: true
+            description: "Search query"
+
+  # ==================== CART SERVICE ====================
+  - name: cart-api
+    host: "localhost:8081"
+    type: "http"
+    spec: "ecommerce/cart/cart-api.yaml"
+    methods:
+      - name: GetCart
+        endpoint: "/cart/{userId}"
+        method: "GET"
+        description: "Get user's shopping cart"
+        path_parameters:
+          - name: "userId"
+            required: true
+            description: "User ID"
+
+      - name: AddToCart
+        endpoint: "/cart/{userId}/items"
+        method: "POST"
+        description: "Add item to cart"
+        path_parameters:
+          - name: "userId"
+            required: true
+        body:
+          productId: string
+          quantity: integer
+
+      - name: UpdateCartItem
+        endpoint: "/cart/{userId}/items/{itemId}"
+        method: "PUT"
+        description: "Update cart item quantity"
+
+      - name: RemoveFromCart
+        endpoint: "/cart/{userId}/items/{itemId}"
+        method: "DELETE"
+        description: "Remove item from cart"
+
+      - name: ClearCart
+        endpoint: "/cart/{userId}"
+        method: "DELETE"
+        description: "Clear entire cart"
+
+  # ==================== ORDER SERVICE ====================
+  - name: order-api
+    host: "localhost:8082"
+    type: "http"
+    spec: "ecommerce/order/order-api.yaml"
+    methods:
+      - name: CreateOrder
+        endpoint: "/orders"
+        method: "POST"
+        description: "Create a new order from cart"
+        body:
+          userId: string
+          shippingAddress: object
+          paymentMethod: string
+
+      - name: GetOrder
+        endpoint: "/orders/{orderId}"
+        method: "GET"
+        description: "Get order details"
+
+      - name: ListUserOrders
+        endpoint: "/users/{userId}/orders"
+        method: "GET"
+        description: "List all orders for a user"
+
+      - name: CancelOrder
+        endpoint: "/orders/{orderId}/cancel"
+        method: "POST"
+        description: "Cancel an order"
+
+      - name: GetOrderStatus
+        endpoint: "/orders/{orderId}/status"
+        method: "GET"
+        description: "Get current order status"
+
+  # ==================== PAYMENT SERVICE (gRPC) ====================
+  - name: payment-grpc
+    host: "localhost:9090"
+    type: "grpc"
+    spec: "ecommerce/payment/payment.proto"
+    service: "payment.PaymentService"
+    methods:
+      - name: ProcessPayment
+        request_type: PaymentRequest
+        response_type: PaymentResponse
+        timeout: 30s
+        endpoint: "/payment/process"
+        description: "Process a payment transaction"
+
+      - name: RefundPayment
+        request_type: RefundRequest
+        response_type: RefundResponse
+        timeout: 30s
+        endpoint: "/payment/refund"
+        description: "Refund a payment"
+
+      - name: GetPaymentStatus
+        request_type: PaymentStatusRequest
+        response_type: PaymentStatusResponse
+        timeout: 5s
+        endpoint: "/payment/status"
+        description: "Get payment status"
+
+  # ==================== INVENTORY SERVICE (gRPC) ====================
+  - name: inventory-grpc
+    host: "localhost:9091"
+    type: "grpc"
+    spec: "ecommerce/inventory/inventory.proto"
+    service: "inventory.InventoryService"
+    methods:
+      - name: CheckStock
+        request_type: StockCheckRequest
+        response_type: StockCheckResponse
+        timeout: 5s
+        endpoint: "/inventory/check"
+        description: "Check product stock availability"
+
+      - name: ReserveStock
+        request_type: ReserveStockRequest
+        response_type: ReserveStockResponse
+        timeout: 10s
+        endpoint: "/inventory/reserve"
+        description: "Reserve stock for an order"
+
+      - name: ReleaseStock
+        request_type: ReleaseStockRequest
+        response_type: ReleaseStockResponse
+        timeout: 10s
+        endpoint: "/inventory/release"
+        description: "Release reserved stock"
+
+  # ==================== SHIPPING SERVICE ====================
+  - name: shipping-api
+    host: "localhost:8083"
+    type: "http"
+    spec: "ecommerce/shipping/shipping-api.yaml"
+    methods:
+      - name: CalculateShipping
+        endpoint: "/shipping/calculate"
+        method: "POST"
+        description: "Calculate shipping cost"
+
+      - name: CreateShipment
+        endpoint: "/shipments"
+        method: "POST"
+        description: "Create a new shipment"
+
+      - name: TrackShipment
+        endpoint: "/shipments/{trackingNumber}"
+        method: "GET"
+        description: "Track a shipment"
+
+      - name: GetShippingOptions
+        endpoint: "/shipping/options"
+        method: "GET"
+        description: "Get available shipping options"

@@ -1,0 +1,170 @@
+name: shippingService
+description: Shipping management - carrier integration, tracking, and delivery coordination
+goals:
+  - name: DeliveryPerformance
+    metrics:
+      - signal: on_time_delivery_rate
+        type: reliability
+        goal: timely_delivery
+        threshold: 0.95  # 95% on-time
+        delay: 0
+        window: 604800  # 1 week
+      - signal: shipping_cost_efficiency
+        type: cost
+        goal: optimize_costs
+        threshold: 0.85
+        delay: 0
+        window: 86400
+      - signal: tracking_accuracy
+        type: quality
+        goal: accurate_tracking
+        threshold: 0.99
+        delay: 0
+        window: 3600
+    resourceContract:
+      priority: normal
+      computeUnits: 60
+      maxWaitTime: "30s"
+      fallbackBehavior: queue
+
+intents:
+  - name: CalculateShippingRates
+    whenSensor: rateSensor
+    toFunc: CalculateRatesFunc
+    primitiveIntent: computation
+    description: "Calculate shipping rates from multiple carriers"
+
+  - name: SelectCarrier
+    whenSensor: carrierSensor
+    toFunc: SelectCarrierFunc
+    primitiveIntent: decision
+    description: "Select optimal carrier based on cost/speed/reliability"
+
+  - name: CreateShipment
+    whenSensor: createSensor
+    toFunc: CreateShipmentFunc
+    primitiveIntent: externalCall
+    description: "Create shipment with carrier API"
+
+  - name: GenerateLabel
+    whenSensor: labelSensor
+    toFunc: GenerateLabelFunc
+    primitiveIntent: externalCall
+    description: "Generate shipping label"
+
+  - name: SchedulePickup
+    whenSensor: pickupSensor
+    toFunc: SchedulePickupFunc
+    primitiveIntent: externalCall
+    description: "Schedule carrier pickup"
+
+  - name: TrackShipment
+    whenSensor: trackingSensor
+    toFunc: TrackShipmentFunc
+    primitiveIntent: dataRetrieval
+    description: "Get shipment tracking updates"
+
+  - name: HandleDeliveryException
+    whenSensor: exceptionSensor
+    toFunc: HandleExceptionFunc
+    primitiveIntent: errorHandling
+    description: "Handle delivery exceptions and failed attempts"
+
+  - name: ProcessReturn
+    whenSensor: returnSensor
+    toFunc: ProcessReturnShipmentFunc
+    primitiveIntent: externalCall
+    description: "Create return shipment"
+
+  - name: UpdateDeliveryStatus
+    whenSensor: webhookSensor
+    toFunc: UpdateStatusFunc
+    primitiveIntent: stateMutation
+    description: "Update delivery status from carrier webhook"
+
+api:
+  basePath: "/api/v1/shipping"
+  endpoints:
+    - name: "calculateRates"
+      method: "POST"
+      path: "/rates"
+      to: "func: CalculateRatesFunc"
+      description: "Calculate shipping rates"
+      public: true
+
+    - name: "getOptions"
+      method: "GET"
+      path: "/options"
+      to: "func: GetShippingOptionsFunc"
+      description: "Get shipping options"
+      public: true
+
+    - name: "createShipment"
+      method: "POST"
+      path: "/shipments"
+      to: "func: CreateShipmentFunc"
+      description: "Create shipment"
+
+    - name: "trackShipment"
+      method: "GET"
+      path: "/shipments/{trackingNumber}"
+      to: "func: TrackShipmentFunc"
+      description: "Track shipment"
+      public: true
+
+    - name: "createReturn"
+      method: "POST"
+      path: "/returns"
+      to: "func: ProcessReturnShipmentFunc"
+      description: "Create return shipment"
+
+petriNet:
+  name: ShippingWorkflow
+  places:
+    - id: pending
+      initial: true
+    - id: labelGenerated
+    - id: pickupScheduled
+    - id: pickedUp
+    - id: inTransit
+    - id: outForDelivery
+    - id: delivered
+    - id: deliveryFailed
+    - id: returned
+  transitions:
+    - id: generateLabel
+      from: [pending]
+      to: [labelGenerated]
+      action: "createLabel"
+    - id: schedulePickup
+      from: [labelGenerated]
+      to: [pickupScheduled]
+      action: "scheduleCarrierPickup"
+    - id: confirmPickup
+      from: [pickupScheduled]
+      to: [pickedUp]
+      guard: "carrier.confirmed"
+    - id: startTransit
+      from: [pickedUp]
+      to: [inTransit]
+      action: "updateTracking"
+    - id: arriveLocal
+      from: [inTransit]
+      to: [outForDelivery]
+      guard: "location.isLocal"
+    - id: deliver
+      from: [outForDelivery]
+      to: [delivered]
+      action: "confirmDelivery"
+    - id: failDelivery
+      from: [outForDelivery]
+      to: [deliveryFailed]
+      action: "logException"
+    - id: retryDelivery
+      from: [deliveryFailed]
+      to: [outForDelivery]
+      guard: "attempts < maxAttempts"
+    - id: returnToSender
+      from: [deliveryFailed]
+      to: [returned]
+      guard: "attempts >= maxAttempts"

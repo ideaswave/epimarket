@@ -1,0 +1,181 @@
+syntax = "proto3";
+
+package payment;
+
+option go_package = "ideaswave.fr/ecommerce/payment";
+
+// Payment Service for processing transactions
+service PaymentService {
+  // Process a new payment
+  rpc ProcessPayment(PaymentRequest) returns (PaymentResponse);
+  
+  // Authorize payment without capturing
+  rpc AuthorizePayment(PaymentRequest) returns (PaymentResponse);
+  
+  // Capture a previously authorized payment
+  rpc CapturePayment(CaptureRequest) returns (PaymentResponse);
+  
+  // Refund a payment
+  rpc RefundPayment(RefundRequest) returns (RefundResponse);
+  
+  // Get payment status
+  rpc GetPaymentStatus(PaymentStatusRequest) returns (PaymentStatusResponse);
+  
+  // Void an authorized payment
+  rpc VoidPayment(VoidRequest) returns (VoidResponse);
+}
+
+message PaymentRequest {
+  string order_id = 1;
+  string customer_id = 2;
+  Money amount = 3;
+  PaymentMethod payment_method = 4;
+  BillingAddress billing_address = 5;
+  string idempotency_key = 6;
+  map<string, string> metadata = 7;
+}
+
+message PaymentResponse {
+  string payment_id = 1;
+  string order_id = 2;
+  PaymentStatus status = 3;
+  Money amount = 4;
+  string authorization_code = 5;
+  string error_code = 6;
+  string error_message = 7;
+  int64 created_at = 8;
+  map<string, string> metadata = 9;
+}
+
+message CaptureRequest {
+  string payment_id = 1;
+  Money amount = 2;  // Optional: for partial capture
+}
+
+message RefundRequest {
+  string payment_id = 1;
+  Money amount = 2;  // Optional: for partial refund
+  string reason = 3;
+  string idempotency_key = 4;
+}
+
+message RefundResponse {
+  string refund_id = 1;
+  string payment_id = 2;
+  RefundStatus status = 3;
+  Money amount = 4;
+  string error_code = 5;
+  string error_message = 6;
+  int64 created_at = 7;
+}
+
+message PaymentStatusRequest {
+  string payment_id = 1;
+}
+
+message PaymentStatusResponse {
+  string payment_id = 1;
+  string order_id = 2;
+  PaymentStatus status = 3;
+  Money amount = 4;
+  Money captured_amount = 5;
+  Money refunded_amount = 6;
+  repeated PaymentEvent events = 7;
+  int64 created_at = 8;
+  int64 updated_at = 9;
+}
+
+message VoidRequest {
+  string payment_id = 1;
+  string reason = 2;
+}
+
+message VoidResponse {
+  string payment_id = 1;
+  bool success = 2;
+  string error_code = 3;
+  string error_message = 4;
+}
+
+message Money {
+  int64 amount = 1;  // Amount in smallest currency unit (cents)
+  string currency = 2;  // ISO 4217 currency code
+}
+
+message PaymentMethod {
+  oneof method {
+    CardPayment card = 1;
+    BankTransfer bank_transfer = 2;
+    DigitalWallet digital_wallet = 3;
+  }
+}
+
+message CardPayment {
+  string card_token = 1;  // Tokenized card from payment provider
+  string last_four = 2;
+  string brand = 3;  // visa, mastercard, amex, etc.
+  int32 exp_month = 4;
+  int32 exp_year = 5;
+  string cardholder_name = 6;
+}
+
+message BankTransfer {
+  string bank_code = 1;
+  string account_number = 2;
+  string routing_number = 3;
+  string account_holder = 4;
+}
+
+message DigitalWallet {
+  WalletType type = 1;
+  string wallet_token = 2;
+}
+
+enum WalletType {
+  WALLET_UNKNOWN = 0;
+  APPLE_PAY = 1;
+  GOOGLE_PAY = 2;
+  PAYPAL = 3;
+}
+
+message BillingAddress {
+  string first_name = 1;
+  string last_name = 2;
+  string address_line1 = 3;
+  string address_line2 = 4;
+  string city = 5;
+  string state = 6;
+  string postal_code = 7;
+  string country = 8;  // ISO 3166-1 alpha-2
+  string phone = 9;
+  string email = 10;
+}
+
+enum PaymentStatus {
+  PAYMENT_UNKNOWN = 0;
+  PAYMENT_PENDING = 1;
+  PAYMENT_AUTHORIZED = 2;
+  PAYMENT_CAPTURED = 3;
+  PAYMENT_PARTIALLY_CAPTURED = 4;
+  PAYMENT_VOIDED = 5;
+  PAYMENT_REFUNDED = 6;
+  PAYMENT_PARTIALLY_REFUNDED = 7;
+  PAYMENT_FAILED = 8;
+  PAYMENT_EXPIRED = 9;
+}
+
+enum RefundStatus {
+  REFUND_UNKNOWN = 0;
+  REFUND_PENDING = 1;
+  REFUND_SUCCEEDED = 2;
+  REFUND_FAILED = 3;
+}
+
+message PaymentEvent {
+  string event_id = 1;
+  string event_type = 2;
+  PaymentStatus status = 3;
+  Money amount = 4;
+  int64 timestamp = 5;
+  map<string, string> details = 6;
+}

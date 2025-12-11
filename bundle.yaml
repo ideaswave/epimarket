@@ -1,0 +1,13 @@
+name: ecommerceBundle
+description: A complete e-commerce platform with order processing, inventory, payments, and shipping
+resourceContract:
+  priority: normal
+  futuresEnabled: true
+services:
+  - path: catalog/catalog-service.yaml
+  - path: cart/cart-service.yaml
+  - path: order/order-service.yaml
+  - path: inventory/inventory-service.yaml
+  - path: payment/payment-service.yaml
+  - path: shipping/shipping-service.yaml
+  - path: notification/notification-service.yaml

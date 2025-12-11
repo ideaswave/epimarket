@@ -1,0 +1,142 @@
+name: inventoryService
+description: Inventory management - stock levels, reservations, and warehouse operations
+goals:
+  - name: InventoryAccuracy
+    metrics:
+      - signal: stock_accuracy
+        type: consistency
+        goal: accurate_stock
+        threshold: 0.999  # 99.9% accuracy
+        delay: 0
+        window: 0
+      - signal: stockout_rate
+        type: availability
+        goal: prevent_stockouts
+        threshold: 0.02  # Max 2% stockouts
+        delay: 0
+        window: 86400
+      - signal: reservation_timeout_rate
+        type: reliability
+        goal: low_timeouts
+        threshold: 0.01
+        delay: 0
+        window: 3600
+    resourceContract:
+      priority: normal
+      computeUnits: 40
+      maxWaitTime: "20s"
+      fallbackBehavior: queue
+
+intents:
+  - name: CheckStock
+    whenSensor: stockCheckSensor
+    toFunc: CheckStockFunc
+    primitiveIntent: dataRetrieval
+    description: "Check available stock for product(s)"
+
+  - name: ReserveStock
+    whenSensor: reserveSensor
+    toFunc: ReserveStockFunc
+    primitiveIntent: resourceLock
+    description: "Reserve stock for pending order"
+
+  - name: CommitReservation
+    whenSensor: commitSensor
+    toFunc: CommitReservationFunc
+    primitiveIntent: stateMutation
+    description: "Commit reservation after successful payment"
+
+  - name: ReleaseReservation
+    whenSensor: releaseSensor
+    toFunc: ReleaseReservationFunc
+    primitiveIntent: resourceRelease
+    description: "Release reservation on order cancellation"
+
+  - name: UpdateStock
+    whenSensor: stockUpdateSensor
+    toFunc: UpdateStockFunc
+    primitiveIntent: stateMutation
+    description: "Update stock levels from warehouse"
+
+  - name: ProcessReturn
+    whenSensor: returnSensor
+    toFunc: ProcessReturnFunc
+    primitiveIntent: stateMutation
+    description: "Return items to inventory"
+
+  - name: ReservationExpiry
+    whenSensor: expirySensor
+    toFunc: ExpireReservationsFunc
+    primitiveIntent: maintenance
+    description: "Expire stale reservations and release stock"
+
+  - name: LowStockAlert
+    whenSensor: lowStockSensor
+    toFunc: LowStockAlertFunc
+    primitiveIntent: notification
+    description: "Trigger alert when stock falls below threshold"
+
+  - name: SyncWarehouseInventory
+    whenSensor: warehouseSyncSensor
+    toFunc: SyncWarehouseFunc
+    primitiveIntent: dataSync
+    description: "Sync inventory with warehouse management system"
+
+api:
+  basePath: "/api/v1/inventory"
+  endpoints:
+    - name: "checkStock"
+      method: "GET"
+      path: "/products/{productId}/stock"
+      to: "func: CheckStockFunc"
+      description: "Check product stock"
+
+    - name: "bulkCheckStock"
+      method: "POST"
+      path: "/stock/check"
+      to: "func: BulkCheckStockFunc"
+      description: "Check stock for multiple products"
+
+    - name: "reserveStock"
+      method: "POST"
+      path: "/reserve"
+      to: "func: ReserveStockFunc"
+      description: "Reserve stock"
+
+    - name: "releaseStock"
+      method: "POST"
+      path: "/release"
+      to: "func: ReleaseReservationFunc"
+      description: "Release reservation"
+
+petriNet:
+  name: InventoryWorkflow
+  places:
+    - id: available
+      initial: true
+    - id: reserved
+    - id: committed
+    - id: shipped
+  transitions:
+    - id: reserve
+      from: [available]
+      to: [reserved]
+      guard: "quantity <= available"
+      action: "decrementAvailable"
+    - id: commit
+      from: [reserved]
+      to: [committed]
+      action: "finalizeReservation"
+    - id: ship
+      from: [committed]
+      to: [shipped]
+      action: "markShipped"
+    - id: release
+      from: [reserved]
+      to: [available]
+      action: "incrementAvailable"
+    - id: expire
+      from: [reserved]
+      to: [available]
+      guard: "reservation.expired"
+      action: "incrementAvailable"

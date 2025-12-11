@@ -1,0 +1,185 @@
+name: orderService
+description: Order lifecycle management - creation, processing, fulfillment, and cancellation
+goals:
+  - name: OrderFulfillment
+    metrics:
+      - signal: order_success_rate
+        type: reliability
+        goal: high_completion
+        threshold: 0.995  # 99.5% success rate
+        delay: 0
+        window: 3600
+      - signal: order_processing_time
+        type: performance
+        goal: fast_processing
+        threshold: 5.0  # Max 5 seconds to process
+        delay: 0
+        window: 60
+      - signal: order_fraud_rate
+        type: security
+        goal: fraud_prevention
+        threshold: 0.001  # Max 0.1% fraud
+        delay: 0
+        window: 86400
+    resourceContract:
+      priority: high
+      computeUnits: 150
+      maxWaitTime: "15s"
+      futuresEnabled: true
+      fallbackBehavior: queue
+
+intents:
+  - name: CreateOrder
+    whenSensor: orderCreationSensor
+    toFunc: CreateOrderFunc
+    primitiveIntent: stateMutation
+    description: "Create new order from validated cart"
+
+  - name: ValidateOrder
+    whenSensor: orderValidationSensor
+    toFunc: ValidateOrderFunc
+    primitiveIntent: validation
+    description: "Validate order details, addresses, and payment info"
+
+  - name: ReserveInventory
+    whenSensor: inventoryReserveSensor
+    toFunc: ReserveInventoryFunc
+    primitiveIntent: resourceLock
+    description: "Reserve inventory for order items"
+
+  - name: ProcessPayment
+    whenSensor: paymentSensor
+    toFunc: ProcessPaymentFunc
+    primitiveIntent: externalCall
+    description: "Process payment through payment gateway"
+
+  - name: ConfirmOrder
+    whenSensor: confirmationSensor
+    toFunc: ConfirmOrderFunc
+    primitiveIntent: stateMutation
+    description: "Confirm order after successful payment"
+
+  - name: InitiateShipment
+    whenSensor: shipmentSensor
+    toFunc: InitiateShipmentFunc
+    primitiveIntent: externalCall
+    description: "Create shipment request with shipping provider"
+
+  - name: CancelOrder
+    whenSensor: cancellationSensor
+    toFunc: CancelOrderFunc
+    primitiveIntent: stateMutation
+    description: "Cancel order and release resources"
+
+  - name: RefundOrder
+    whenSensor: refundSensor
+    toFunc: RefundOrderFunc
+    primitiveIntent: compensation
+    description: "Process refund for cancelled/returned order"
+
+  - name: HandleOrderTimeout
+    whenSensor: timeoutSensor
+    toFunc: HandleTimeoutFunc
+    primitiveIntent: compensation
+    description: "Handle stuck orders and trigger compensation"
+
+  - name: TwoPhaseCommit
+    whenSensor: commitSensor
+    toFunc: TwoPhaseCommitFunc
+    primitiveIntent: twoPhaseCommit
+    description: "Coordinate distributed transaction across services"
+
+api:
+  basePath: "/api/v1/orders"
+  endpoints:
+    - name: "createOrder"
+      method: "POST"
+      path: "/"
+      to: "wasm:ecommerce:handleOrderAPI"
+      description: "Create new order"
+
+    - name: "getOrder"
+      method: "GET"
+      path: "/{orderId}"
+      to: "wasm:ecommerce:handleOrderAPI"
+      description: "Get order details"
+
+    - name: "listOrders"
+      method: "GET"
+      path: "/user/{userId}"
+      to: "wasm:ecommerce:handleOrderAPI"
+      description: "List user orders"
+
+    - name: "cancelOrder"
+      method: "POST"
+      path: "/{orderId}/cancel"
+      to: "wasm:ecommerce:handleOrderAPI"
+      description: "Cancel order"
+
+    - name: "getOrderStatus"
+      method: "GET"
+      path: "/{orderId}/status"
+      to: "wasm:ecommerce:handleOrderAPI"
+      description: "Get order status"
+
+petriNet:
+  name: OrderWorkflow
+  places:
+    - id: created
+      initial: true
+    - id: validated
+    - id: inventoryReserved
+    - id: paymentPending
+    - id: paymentCompleted
+    - id: confirmed
+    - id: shipped
+    - id: delivered
+    - id: cancelled
+    - id: refunded
+  transitions:
+    - id: validateOrder
+      from: [created]
+      to: [validated]
+      action: "validateOrderDetails"
+      guard: "order.isValid"
+    - id: reserveStock
+      from: [validated]
+      to: [inventoryReserved]
+      action: "reserveInventory"
+      guard: "inventory.available"
+    - id: requestPayment
+      from: [inventoryReserved]
+      to: [paymentPending]
+      action: "initiatePayment"
+    - id: paymentSuccess
+      from: [paymentPending]
+      to: [paymentCompleted]
+      guard: "payment.successful"
+    - id: confirmOrder
+      from: [paymentCompleted]
+      to: [confirmed]
+      action: "sendConfirmation"
+    - id: shipOrder
+      from: [confirmed]
+      to: [shipped]
+      action: "createShipment"
+    - id: deliverOrder
+      from: [shipped]
+      to: [delivered]
+      guard: "shipment.delivered"
+    - id: cancelFromCreated
+      from: [created]
+      to: [cancelled]
+      action: "cancel"
+    - id: cancelFromValidated
+      from: [validated]
+      to: [cancelled]
+      action: "cancel"
+    - id: cancelWithRefund
+      from: [paymentCompleted, confirmed]
+      to: [refunded]
+      action: "processRefund"
+    - id: paymentFailed
+      from: [paymentPending]
+      to: [cancelled]
+      action: "releaseInventory"
